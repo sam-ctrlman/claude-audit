@@ -1,6 +1,6 @@
 ---
-description: "TODO: claude-audit — describe what this slash command does"
-argument-hint: "[run|install|uninstall]"
+description: "claude-audit — list the commands/edits Claude Code ran, from session transcripts"
+argument-hint: "[today|session <id|current|last>|sessions [N]] [--project X] [--date D|--since D] [--tools all] [--full]"
 ---
 
 Run `claude-audit $ARGUMENTS` from the user's current directory using the Bash tool.
@@ -9,10 +9,11 @@ Run `claude-audit $ARGUMENTS` from the user's current directory using the Bash t
 
 Actions:
 
-- **`claude-audit`** or **`claude-audit run`** — TODO: the workflow this tool automates (not implemented yet — edit `cmd_run()` in the script).
-- **`claude-audit install`** — create both symlinks (bin + Claude command). Idempotent.
-- **`claude-audit uninstall`** — remove both symlinks. Idempotent.
+- **`claude-audit`** or **`claude-audit today`** — today's actions across all projects.
+- **`claude-audit session <id|prefix|current|last>`** — one session's actions (`current` = this Claude Code session).
+- **`claude-audit sessions [N]`** — the N most recently active sessions.
+- **`claude-audit install`** / **`uninstall`** — manage both symlinks. Idempotent.
 
-After it returns, surface the `[ok]` / `[error]` / `[notice]` log lines to the user. Do NOT improvise steps the tool does not perform — the tool owns its workflow.
+Read-only: it never modifies transcripts. After it returns, show the output to the user (summarize if very long) and surface the `[ok]` / `[error]` / `[notice]` lines. Do NOT improvise steps the tool does not perform. Never paste its output into external services — transcripts can contain secrets.
 
-Pass through `$ARGUMENTS` verbatim. Valid args: `run`, `install`, `uninstall`, or empty (defaults to `run`).
+Pass through `$ARGUMENTS` verbatim.
