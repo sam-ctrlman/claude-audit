@@ -33,6 +33,7 @@ import re
 import shutil
 import sys
 import time
+import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 
@@ -186,14 +187,35 @@ def _collect(args, files):
     return rows, bad
 
 
+def _ch_cols(ch: str) -> int:
+    """Screen columns of one char. Ambiguous (…, ·, →) counts 2: some terminals draw it wide."""
+    if unicodedata.category(ch) in ("Mn", "Me", "Cf"):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F", "A") else 1
+
+
+def _cols(s: str) -> int:
+    return sum(_ch_cols(ch) for ch in s)
+
+
 def _fmt_row(row, width: int | None, mark: str | None = None, cols: int | None = None) -> str:
-    """One output line. width = max text chars (None = no cut); cols = fit the line to this many columns."""
+    """One output line. width = max text chars (None = no cut); cols = fit the line to this many
+    screen columns (counted by display width, one column spare so nothing wraps)."""
     dt, proj, sid, name, err, text = row[:6]
     if mark is None:
         mark = "·" if err is None else ("✗" if err else "✓")
     prefix = f"{dt:%Y-%m-%d %H:%M:%S}  {proj}  {sid}  {name:<6} {mark}  "
     if cols:
-        width = max(20, cols - len(prefix))
+        budget = max(20, cols - 1 - _cols(prefix))
+        if _cols(text) > budget:
+            used, keep = 0, []
+            for ch in text:
+                used += _ch_cols(ch)
+                if used > budget - 2:  # room for the 2-column "…"
+                    break
+                keep.append(ch)
+            text = "".join(keep) + "…"
+        return prefix + text
     if width and len(text) > width:
         text = text[: width - 1] + "…"
     return prefix + text
