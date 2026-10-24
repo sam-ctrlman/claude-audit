@@ -10,12 +10,15 @@ Usage:
   claude-audit today                    # today's actions, all projects
   claude-audit session <id|prefix|current|last>
   claude-audit sessions [N]             # N newest sessions (default 10)
+  claude-audit today -t                 # live log like tail -f (Ctrl-C stops)
+  claude-audit session last -t -n 50    # one session live, 50-row backlog
   claude-audit install                  # symlink into ~/.local/bin + ~/.claude/commands
   claude-audit uninstall                # remove those symlinks
   claude-audit --help
 
 Options: --tools Bash,Edit,... | all, --project <substr>, --date/--since
-YYYY-MM-DD, --full, --no-subagents.
+YYYY-MM-DD, --full, -w/--width N, --no-subagents; with -t: -n/--lines N,
+--interval SEC.
 
 Scaffolded by `forge`. The tool name is derived from the repo directory, so
 nothing here is hardcoded — rename the repo and it follows.
@@ -29,6 +32,7 @@ import os
 import re
 import shutil
 import sys
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -56,6 +60,7 @@ def _command_source() -> Path:
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 DEFAULT_TOOLS = {"Bash", "Edit", "Write", "NotebookEdit"}
 WIDTH = 160
+PENDING_GRACE = 3.0  # -t: seconds before a call without a result is shown as running (…)
 HOME_PREFIX = re.sub(r"[^A-Za-z0-9]", "-", str(Path.home())) + "-"
 
 
@@ -100,7 +105,7 @@ def _summary(use: dict) -> str:
 
 
 def _read_actions(path: Path, tools: set[str] | None):
-    """Return (actions, bad_lines, first_prompt). Each action is (dt, name, summary, is_error)."""
+    """Return (actions, bad_lines, first_prompt). Each action is (dt, name, summary, is_error, id)."""
     uses, errors, bad, prompt = [], {}, 0, None
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -129,7 +134,8 @@ def _read_actions(path: Path, tools: set[str] | None):
                 elif d.get("type") == "user" and prompt is None and c.get("type") == "text" \
                         and not c.get("text", "").lstrip().startswith("<"):
                     prompt = c.get("text")
-    actions = [(dt, c.get("name", "?"), _summary(c), errors.get(c.get("id"))) for dt, c in uses if dt]
+    actions = [(dt, c.get("name", "?"), _summary(c), errors.get(c.get("id")), c.get("id"))
+               for dt, c in uses if dt]
     return actions, bad, prompt
 
 
@@ -155,37 +161,114 @@ def _resolve_session(target: str | None, project: str | None, subagents: bool):
     return [t for t in files if t[2] == ids[0]]
 
 
-def cmd_actions(args, files) -> int:
+def _collect(args, files):
+    """Apply --tools/--date/--since to the files' actions. Return (rows, bad_lines), sorted by time.
+    Row = (dt, project, session_label, tool, is_error, text, tool_use_id, session_id)."""
     tools = None if args.tools == "all" else set(args.tools.split(","))
     since = date.fromisoformat(args.since) if args.since else None
     only = date.fromisoformat(args.date) if args.date else None
     floor = only or since
-    rows, sessions, bad = [], set(), 0
+    rows, bad = [], 0
     for proj, f, sid, sub in files:
-        if floor and date.fromtimestamp(f.stat().st_mtime) < floor:
-            continue  # file untouched since before the window
-        actions, nbad, _ = _read_actions(f, tools)
+        try:
+            if floor and date.fromtimestamp(f.stat().st_mtime) < floor:
+                continue  # file untouched since before the window
+            actions, nbad, _ = _read_actions(f, tools)
+        except FileNotFoundError:
+            continue  # removed between glob and read
         bad += nbad
-        for dt, name, text, err in actions:
+        for dt, name, text, err, uid in actions:
             d = dt.date()
             if (only and d != only) or (since and d < since):
                 continue
-            rows.append((dt, _project_label(proj), sid[:8] + ("[sub]" if sub else ""), name, err, text))
-            sessions.add(sid)
+            rows.append((dt, _project_label(proj), sid[:8] + ("[sub]" if sub else ""), name, err, text, uid, sid))
     rows.sort(key=lambda r: r[0])
-    for dt, proj, sid, name, err, text in rows:
+    return rows, bad
+
+
+def _fmt_row(row, width: int | None, mark: str | None = None, cols: int | None = None) -> str:
+    """One output line. width = max text chars (None = no cut); cols = fit the line to this many columns."""
+    dt, proj, sid, name, err, text = row[:6]
+    if mark is None:
         mark = "·" if err is None else ("✗" if err else "✓")
-        if not args.full and len(text) > WIDTH:
-            text = text[: WIDTH - 1] + "…"
-        print(f"{dt:%Y-%m-%d %H:%M:%S}  {proj}  {sid}  {name:<6} {mark}  {text}")
+    prefix = f"{dt:%Y-%m-%d %H:%M:%S}  {proj}  {sid}  {name:<6} {mark}  "
+    if cols:
+        width = max(20, cols - len(prefix))
+    if width and len(text) > width:
+        text = text[: width - 1] + "…"
+    return prefix + text
+
+
+def cmd_actions(args, files) -> int:
+    rows, bad = _collect(args, files)
+    width = None if args.full else (args.width or WIDTH)
+    for row in rows:
+        print(_fmt_row(row, width))
     if bad:
         log("notice", f"skipped {bad} unparsable line(s)")
     if not rows:
         log("info", "no actions")
         return 0
     errs = sum(1 for r in rows if r[4])
-    log("ok", f"{len(rows)} actions in {len(sessions)} session(s) ({errs} errors)")
+    log("ok", f"{len(rows)} actions in {len({r[7] for r in rows})} session(s) ({errs} errors)")
     return 0
+
+
+def _file_sig(f: Path):
+    try:
+        st = f.stat()
+    except FileNotFoundError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
+def cmd_tail(args, file_source) -> int:
+    """Print the last -n rows, then keep printing new actions like tail -f.
+    file_source() is re-run every poll, so new sessions and subagent files are picked up."""
+    width = None if args.full else args.width
+    cols = None if (args.full or args.width) else shutil.get_terminal_size((WIDTH, 24)).columns
+
+    def show(row, mark=None):
+        print(_fmt_row(row, width, mark=mark, cols=cols), flush=True)
+
+    files = list(file_source())
+    sigs = {t[1]: _file_sig(t[1]) for t in files}
+    rows, _ = _collect(args, files)
+    done = {r[6] for r in rows if r[4] is not None}
+    running = {r[6] for r in rows if r[4] is None}  # backlog rows already shown with ·
+    for row in rows[-args.lines:] if args.lines > 0 else []:
+        show(row)
+    log("info", f"following {len(files)} transcript(s), every {args.interval:g}s — Ctrl-C to stop")
+    pending = {}  # tool_use_id -> (first_seen, row) for new calls without a result yet
+    try:
+        while True:
+            time.sleep(args.interval)
+            changed = []
+            for t in file_source():
+                sig = _file_sig(t[1])
+                if sigs.get(t[1]) != sig:
+                    sigs[t[1]] = sig
+                    changed.append(t)
+            for row in _collect(args, changed)[0] if changed else []:
+                uid, err = row[6], row[4]
+                if uid in done:
+                    continue
+                if err is not None:
+                    show(row)
+                    done.add(uid)
+                    pending.pop(uid, None)
+                elif uid not in running and uid not in pending:
+                    pending[uid] = (time.monotonic(), row)
+            now = time.monotonic()
+            for uid, (seen, row) in sorted(pending.items(), key=lambda kv: kv[1][1][0]):
+                if now - seen >= PENDING_GRACE:
+                    show(row, mark="…")
+                    running.add(uid)
+                    del pending[uid]
+    except KeyboardInterrupt:
+        print(flush=True)
+        log("info", "stopped")
+        return 130
 
 
 def cmd_sessions(args) -> int:
@@ -208,9 +291,19 @@ def cmd_run(args) -> int:
     if args.action == "sessions":
         return cmd_sessions(args)
     if args.action == "session":
-        return cmd_actions(args, _resolve_session(args.target, args.project, subagents))
+        files = _resolve_session(args.target, args.project, subagents)
+        if args.tail:
+            sid = files[0][2]  # resolved once: 'last' keeps following this session
+            return cmd_tail(args, lambda: [t for t in _transcripts(args.project, subagents) if t[2] == sid])
+        return cmd_actions(args, files)
     if not args.date and not args.since:
-        args.date = date.today().isoformat()
+        # -t uses "since today" so the log keeps running past midnight
+        if args.tail:
+            args.since = date.today().isoformat()
+        else:
+            args.date = date.today().isoformat()
+    if args.tail:
+        return cmd_tail(args, lambda: _transcripts(args.project, subagents))
     return cmd_actions(args, list(_transcripts(args.project, subagents)))
 
 
@@ -324,9 +417,23 @@ def main() -> int:
     window = parser.add_mutually_exclusive_group()
     window.add_argument("--date", help="only this local date, YYYY-MM-DD")
     window.add_argument("--since", help="from this local date on, YYYY-MM-DD")
-    parser.add_argument("--full", action="store_true", help=f"don't truncate at {WIDTH} chars")
+    parser.add_argument("--full", action="store_true", help="don't cut the command text")
+    parser.add_argument("-w", "--width", type=int,
+                        help=f"cut the command text at N chars (default {WIDTH}; with -t: fit the terminal)")
     parser.add_argument("--no-subagents", action="store_true", help="skip subagents/*.jsonl")
+    parser.add_argument("-t", "-f", "--tail", "--follow", dest="tail", action="store_true",
+                        help="keep running and print new actions as they happen, like tail -f (Ctrl-C stops)")
+    parser.add_argument("-n", "--lines", type=int, default=20,
+                        help="with -t: backlog rows shown before following (default: %(default)s)")
+    parser.add_argument("--interval", type=float, default=2.0,
+                        help="with -t: poll interval in seconds (default: %(default)s)")
     args = parser.parse_args()
+    if args.tail and args.action in ("sessions", "install", "uninstall"):
+        parser.error(f"-t/--tail does not work with '{args.action}'")
+    if args.width is not None and args.width < 10:
+        parser.error("--width must be at least 10")
+    if args.lines < 0 or args.interval <= 0:
+        parser.error("--lines must be >= 0 and --interval > 0")
     for value in (args.date, args.since):
         if value:
             try:
