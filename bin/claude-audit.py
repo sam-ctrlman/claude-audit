@@ -12,12 +12,13 @@ Usage:
   claude-audit sessions [N]             # N newest sessions (default 10)
   claude-audit today -t                 # live log like tail -f (Ctrl-C stops)
   claude-audit session last -t -n 50    # one session live, 50-row backlog
+  claude-audit session last -S          # full lines in less: ←/→ scroll sideways
   claude-audit install                  # symlink into ~/.local/bin + ~/.claude/commands
   claude-audit uninstall                # remove those symlinks
   claude-audit --help
 
 Options: --tools Bash,Edit,... | all, --project <substr>, --date/--since
-YYYY-MM-DD, --full, -w/--width N, --no-subagents; with -t: -n/--lines N,
+YYYY-MM-DD, --full, -w/--width N, -S/--scroll, --no-subagents; with -t: -n/--lines N,
 --interval SEC.
 
 Scaffolded by `forge`. The tool name is derived from the repo directory, so
@@ -31,6 +32,8 @@ import json
 import os
 import re
 import shutil
+import signal
+import subprocess
 import sys
 import time
 import unicodedata
@@ -221,6 +224,17 @@ def _fmt_row(row, width: int | None, mark: str | None = None, cols: int | None =
     return prefix + text
 
 
+def _open_pager(follow: bool):
+    """-S: send stdout into `less -S` so long rows scroll sideways. None = not on a terminal."""
+    if not sys.stdout.isatty() or not shutil.which("less"):
+        log("notice", "-S needs a terminal and less — printing full lines instead")
+        return None
+    opts = ["+F"] if follow else ["-F", "-X"]  # +F = follow; -F -X = one screen just prints
+    pager = subprocess.Popen(["less", "-S", "-R", *opts], stdin=subprocess.PIPE, text=True)
+    sys.stdout = pager.stdin
+    return pager
+
+
 def cmd_actions(args, files) -> int:
     rows, bad = _collect(args, files)
     width = None if args.full else (args.width or WIDTH)
@@ -260,11 +274,17 @@ def cmd_tail(args, file_source) -> int:
     running = {r[6] for r in rows if r[4] is None}  # backlog rows already shown with ·
     for row in rows[-args.lines:] if args.lines > 0 else []:
         show(row)
-    log("info", f"following {len(files)} transcript(s), every {args.interval:g}s — Ctrl-C to stop")
+    if args.pager:
+        signal.signal(signal.SIGINT, signal.SIG_IGN)  # Ctrl-C only pauses less, not us
+        log("info", f"following {len(files)} transcript(s) — Ctrl-C pauses, F resumes, q quits")
+    else:
+        log("info", f"following {len(files)} transcript(s), every {args.interval:g}s — Ctrl-C to stop")
     pending = {}  # tool_use_id -> (first_seen, row) for new calls without a result yet
     try:
         while True:
             time.sleep(args.interval)
+            if args.pager and args.pager.poll() is not None:
+                return 0  # user quit less
             changed = []
             for t in file_source():
                 sig = _file_sig(t[1])
@@ -303,7 +323,9 @@ def cmd_sessions(args) -> int:
     for proj, f, sid, _ in mains[:n]:
         actions, _, prompt = _read_actions(f, DEFAULT_TOOLS)
         start = datetime.fromtimestamp(f.stat().st_mtime).astimezone()
-        prompt = " ".join((prompt or "").split())[:60]
+        prompt = " ".join((prompt or "").split())
+        if not args.full:
+            prompt = prompt[:60]
         print(f"{sid}  {start:%Y-%m-%d %H:%M}  {_project_label(proj)}  {len(actions):>4} actions  {prompt}")
     return 0
 
@@ -440,6 +462,8 @@ def main() -> int:
     window.add_argument("--date", help="only this local date, YYYY-MM-DD")
     window.add_argument("--since", help="from this local date on, YYYY-MM-DD")
     parser.add_argument("--full", action="store_true", help="don't cut the command text")
+    parser.add_argument("-S", "--scroll", action="store_true",
+                        help="full lines in less -S: ←/→ scroll sideways (with -t: Ctrl-C pauses, F resumes, q quits)")
     parser.add_argument("-w", "--width", type=int,
                         help=f"cut the command text at N chars (default {WIDTH}; with -t: fit the terminal)")
     parser.add_argument("--no-subagents", action="store_true", help="skip subagents/*.jsonl")
@@ -454,6 +478,8 @@ def main() -> int:
         parser.error(f"-t/--tail does not work with '{args.action}'")
     if args.width is not None and args.width < 10:
         parser.error("--width must be at least 10")
+    if args.scroll and args.width is not None:
+        parser.error("-S shows full lines; don't combine it with -w")
     if args.lines < 0 or args.interval <= 0:
         parser.error("--lines must be >= 0 and --interval > 0")
     for value in (args.date, args.since):
@@ -466,7 +492,23 @@ def main() -> int:
         return cmd_install()
     if args.action == "uninstall":
         return cmd_uninstall()
-    return cmd_run(args)
+    args.pager = None
+    if args.scroll:
+        args.full = True
+        args.pager = _open_pager(follow=args.tail)
+    if not args.pager:
+        return cmd_run(args)
+    try:
+        return cmd_run(args)
+    except BrokenPipeError:
+        return 0  # user quit less early
+    finally:
+        try:
+            sys.stdout.close()
+        except BrokenPipeError:
+            pass
+        sys.stdout = sys.__stdout__
+        args.pager.wait()
 
 
 if __name__ == "__main__":

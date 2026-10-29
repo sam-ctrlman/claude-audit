@@ -85,6 +85,7 @@ Customize what `claude-audit` displays using the following flags:
 | `--since YYYY-MM-DD` | *None* | Show all actions recorded on or after a specific date. |
 | `--full` | `false` | Print complete command strings and file paths without line truncation. |
 | `-w`, `--width <N>` | `160` (or TTY width in `-t`) | Truncate command text at `N` characters. |
+| `-S`, `--scroll` | `false` | Full lines inside `less -S`: `←`/`→` scroll sideways, `/` search, `q` quit. With `-t`: `Ctrl-C` pauses the follow, `F` resumes, `q` quits (exit `0`). Without a terminal it prints like `--full`. Not with `-w`. |
 | `--no-subagents` | `false` | Exclude actions executed by subagents (`*/subagents/*.jsonl`). |
 | `-t`, `-f`, `--tail`, `--follow` | `false` | Enable live-streaming mode (`Ctrl-C` to stop, exits with code `130`). |
 | `-n`, `--lines <N>` | `20` | Number of historical backlog rows to display when starting `-t` live mode. |
@@ -110,6 +111,12 @@ claude-audit session last -t -n 50
 View every tool call (including reads and searches) without character truncation for a specific repository:
 ```sh
 claude-audit -t --project my-app --tools all --full
+```
+
+Keep long commands on one line and scroll sideways instead of wrapping:
+```sh
+claude-audit session last -S
+claude-audit today -t -S
 ```
 
 ### 4. Review Recent Sessions Before Resuming Work
