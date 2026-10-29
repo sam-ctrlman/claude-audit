@@ -5,7 +5,7 @@ argument-hint: "[today|session <id|current|last>|sessions [N]] [--project X] [--
 
 Run `claude-audit $ARGUMENTS` from the user's current directory using the Bash tool.
 
-`claude-audit` is a Python tool at `~/scripts/claude-audit/bin/claude-audit.py` (symlinked to `~/.local/bin/claude-audit`). This slash command file is at `~/scripts/claude-audit/commands/claude-audit.md` (symlinked to `~/.claude/commands/claude-audit.md`).
+`claude-audit` is a Python tool at `~/tools/projects/claude-audit/bin/claude-audit.py` (symlinked to `~/.local/bin/claude-audit`). This slash command file is at `~/tools/projects/claude-audit/commands/claude-audit.md` (symlinked to `~/.claude/commands/claude-audit.md`).
 
 Actions:
 

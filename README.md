@@ -44,8 +44,8 @@ When running **Claude Code** (especially in autonomous / auto-accept mode), keep
 Clone the repository and run the built-in installer to symlink both the CLI binary and the Claude Code slash command:
 
 ```sh
-git clone <remote-url> ~/scripts/claude-audit
-python3 ~/scripts/claude-audit/bin/claude-audit.py install
+git clone <remote-url> ~/tools/projects/claude-audit
+python3 ~/tools/projects/claude-audit/bin/claude-audit.py install
 ```
 
 Once installed:
@@ -148,7 +148,7 @@ claude-audit sessions 15
 
 ### Directory Structure
 ```text
-~/scripts/claude-audit/
+~/tools/projects/claude-audit/
 ├── README.md
 ├── bin/claude-audit.py       # Core CLI executable & JSONL parser
 └── commands/claude-audit.md  # Slash-command definition for Claude Code
