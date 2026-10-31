@@ -86,6 +86,7 @@ Customize what `claude-audit` displays using the following flags:
 | `--full` | `false` | Print complete command strings and file paths without line truncation. |
 | `-w`, `--width <N>` | `160` (or TTY width in `-t`) | Truncate command text at `N` characters. |
 | `-S`, `--scroll` | `false` | Full lines inside `less -S`: `←`/`→` scroll sideways, `/` search, `q` quit. With `-t`: `Ctrl-C` pauses the follow, `F` resumes, `q` quits (exit `0`). Without a terminal it prints like `--full`. Not with `-w`. |
+| `--hide <COLS>` | *None* | Leave columns out, comma list of `datetime`, `project`, `sid`, `name`, `mark` (aliases `dt`/`date`/`time`, `proj`, `session`, `tool`, `status`). The command text always shows; in `-t` it gets the freed width. Hiding `mark` hides ✓/✗/· too. |
 | `--no-subagents` | `false` | Exclude actions executed by subagents (`*/subagents/*.jsonl`). |
 | `-t`, `-f`, `--tail`, `--follow` | `false` | Enable live-streaming mode (`Ctrl-C` to stop, exits with code `130`). |
 | `-n`, `--lines <N>` | `20` | Number of historical backlog rows to display when starting `-t` live mode. |
@@ -117,6 +118,11 @@ Keep long commands on one line and scroll sideways instead of wrapping:
 ```sh
 claude-audit session last -S
 claude-audit today -t -S
+```
+
+Drop columns you don't need on a full-screen terminal:
+```sh
+claude-audit today -t -S --hide datetime,sid
 ```
 
 ### 4. Review Recent Sessions Before Resuming Work

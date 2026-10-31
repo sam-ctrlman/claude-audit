@@ -64,6 +64,9 @@ def _command_source() -> Path:
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 DEFAULT_TOOLS = {"Bash", "Edit", "Write", "NotebookEdit"}
 WIDTH = 160
+HIDEABLE = ("datetime", "project", "sid", "name", "mark")  # --hide; the command text always shows
+HIDE_ALIASES = {"dt": "datetime", "date": "datetime", "time": "datetime", "proj": "project",
+                "session": "sid", "tool": "name", "status": "mark"}
 PENDING_GRACE = 3.0  # -t: seconds before a call without a result is shown as running (…)
 HOME_PREFIX = re.sub(r"[^A-Za-z0-9]", "-", str(Path.home())) + "-"
 
@@ -201,13 +204,34 @@ def _cols(s: str) -> int:
     return sum(_ch_cols(ch) for ch in s)
 
 
-def _fmt_row(row, width: int | None, mark: str | None = None, cols: int | None = None) -> str:
+def _parse_hide(value: str) -> frozenset:
+    """--hide value: comma list of HIDEABLE column names (or aliases) -> set of canonical names."""
+    out = set()
+    for part in value.split(","):
+        key = part.strip().lower()
+        if not key:
+            continue
+        key = HIDE_ALIASES.get(key, key)
+        if key not in HIDEABLE:
+            raise argparse.ArgumentTypeError(f"unknown column '{part.strip()}', want: {','.join(HIDEABLE)}")
+        out.add(key)
+    return frozenset(out)
+
+
+def _fmt_row(row, width: int | None, mark: str | None = None, cols: int | None = None,
+             hide: frozenset = frozenset()) -> str:
     """One output line. width = max text chars (None = no cut); cols = fit the line to this many
-    screen columns (counted by display width, one column spare so nothing wraps)."""
+    screen columns (counted by display width, one column spare so nothing wraps).
+    hide = HIDEABLE column names left out of the line."""
     dt, proj, sid, name, err, text = row[:6]
     if mark is None:
         mark = "·" if err is None else ("✗" if err else "✓")
-    prefix = f"{dt:%Y-%m-%d %H:%M:%S}  {proj}  {sid}  {name:<6} {mark}  "
+    if not hide:
+        prefix = f"{dt:%Y-%m-%d %H:%M:%S}  {proj}  {sid}  {name:<6} {mark}  "
+    else:
+        parts = [("datetime", f"{dt:%Y-%m-%d %H:%M:%S}  "), ("project", f"{proj}  "),
+                 ("sid", f"{sid}  "), ("name", f"{name:<6} "), ("mark", f"{mark}  ")]
+        prefix = "".join(s for key, s in parts if key not in hide)
     if cols:
         budget = max(20, cols - 1 - _cols(prefix))
         if _cols(text) > budget:
@@ -239,7 +263,7 @@ def cmd_actions(args, files) -> int:
     rows, bad = _collect(args, files)
     width = None if args.full else (args.width or WIDTH)
     for row in rows:
-        print(_fmt_row(row, width))
+        print(_fmt_row(row, width, hide=args.hide))
     if bad:
         log("notice", f"skipped {bad} unparsable line(s)")
     if not rows:
@@ -265,7 +289,7 @@ def cmd_tail(args, file_source) -> int:
     cols = None if (args.full or args.width) else shutil.get_terminal_size((WIDTH, 24)).columns
 
     def show(row, mark=None):
-        print(_fmt_row(row, width, mark=mark, cols=cols), flush=True)
+        print(_fmt_row(row, width, mark=mark, cols=cols, hide=args.hide), flush=True)
 
     files = list(file_source())
     sigs = {t[1]: _file_sig(t[1]) for t in files}
@@ -466,6 +490,9 @@ def main() -> int:
                         help="full lines in less -S: ←/→ scroll sideways (with -t: Ctrl-C pauses, F resumes, q quits)")
     parser.add_argument("-w", "--width", type=int,
                         help=f"cut the command text at N chars (default {WIDTH}; with -t: fit the terminal)")
+    parser.add_argument("--hide", type=_parse_hide, default=frozenset(), metavar="COLS",
+                        help=f"leave these columns out, comma list: {','.join(HIDEABLE)} "
+                             "(the command text always shows)")
     parser.add_argument("--no-subagents", action="store_true", help="skip subagents/*.jsonl")
     parser.add_argument("-t", "-f", "--tail", "--follow", dest="tail", action="store_true",
                         help="keep running and print new actions as they happen, like tail -f (Ctrl-C stops)")
