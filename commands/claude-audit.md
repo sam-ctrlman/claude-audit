@@ -1,6 +1,6 @@
 ---
 description: "claude-audit — list the commands/edits Claude Code ran, from session transcripts"
-argument-hint: "[today|session <id|current|last>|sessions [N]] [--project X] [--date D|--since D] [--tools all] [--full] [-w N] [-S]"
+argument-hint: "[today|session <id|current|last>|sessions [N]] [--project X] [--date D|--since D] [--tools all] [--full] [-w N] [-S] [--hide COLS]"
 ---
 
 Run `claude-audit $ARGUMENTS` from the user's current directory using the Bash tool.
