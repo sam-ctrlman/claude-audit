@@ -1,11 +1,13 @@
 ---
+name: claude-audit
 description: "claude-audit — list the commands/edits Claude Code ran, from session transcripts"
 argument-hint: "[today|session <id|current|last>|sessions [N]] [--project X] [--date D|--since D] [--tools all] [--full] [-w N] [-S] [--hide COLS]"
+disable-model-invocation: true
 ---
 
 Run `claude-audit $ARGUMENTS` from the user's current directory using the Bash tool.
 
-`claude-audit` is a Python tool at `~/tools/projects/claude-audit/bin/claude-audit.py` (symlinked to `~/.local/bin/claude-audit`). This slash command file is at `~/tools/projects/claude-audit/commands/claude-audit.md` (symlinked to `~/.claude/commands/claude-audit.md`).
+`claude-audit` is a Python tool at `~/tools/projects/claude-audit/bin/claude-audit.py` (symlinked to `~/.local/bin/claude-audit`). This skill is at `~/tools/projects/claude-audit/skills/claude-audit/SKILL.md` (its folder is symlinked to `~/.claude/skills/claude-audit`).
 
 Actions:
 

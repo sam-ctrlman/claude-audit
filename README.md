@@ -157,7 +157,7 @@ claude-audit sessions 15
 ~/tools/projects/claude-audit/
 ├── README.md
 ├── bin/claude-audit.py       # Core CLI executable & JSONL parser
-└── commands/claude-audit.md  # Slash-command definition for Claude Code
+└── skills/claude-audit/SKILL.md  # Slash-command definition for Claude Code
 ```
 
 ---
