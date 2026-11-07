@@ -19,14 +19,14 @@ When running **Claude Code** (especially in autonomous / auto-accept mode), keep
 ## Example Output
 
 ```text
-14:02:11  my-app  8f9a2c10       Bash   ✓  npm run test:unit
-14:02:18  my-app  8f9a2c10[sub]  Edit   ✓  src/auth/middleware.ts
-14:02:24  my-app  8f9a2c10       Bash   ✗  npx prisma migrate deploy
-14:02:29  my-app  8f9a2c10       Bash   …  docker compose build --no-cache
+2026-11-07 14:02:11  my-app  8f9a2c10       Bash   ✓  npm run test:unit
+2026-11-07 14:02:18  my-app  8f9a2c10[sub]  Edit   ✓  src/auth/middleware.ts
+2026-11-07 14:02:24  my-app  8f9a2c10       Bash   ✗  npx prisma migrate deploy
+2026-11-07 14:02:29  my-app  8f9a2c10       Bash   …  docker compose build --no-cache
 ```
 
 **Output Columns:**
-`time  project  session[sub]  tool  status  command-or-path`
+`datetime  project  session[sub]  tool  status  command-or-path`
 
 | Status Symbol | Meaning |
 | :---: | :--- |
@@ -41,7 +41,7 @@ When running **Claude Code** (especially in autonomous / auto-accept mode), keep
 
 ## Installation
 
-Clone the repository and run the built-in installer to symlink both the CLI binary and the Claude Code slash command:
+Clone the repository and run the built-in installer to symlink both the CLI binary (`~/.local/bin/claude-audit`) and the Claude Code skill (`~/.claude/skills/claude-audit`):
 
 ```sh
 git clone <remote-url> ~/tools/projects/claude-audit
@@ -68,7 +68,7 @@ claude-audit uninstall
 | `claude-audit sessions [N]` | List the `N` most recently active sessions (default: `10`), displaying UUID, last active timestamp, project name, total action count, and initial prompt. |
 | `claude-audit today -t` | Stream a live log (`tail -f` mode) across all projects. Prints the last `-n` actions (default: `20`), then streams new actions in real time. |
 | `claude-audit session last -t` | Stream a live log locked to the newest session in your current working directory (`$PWD`). |
-| `claude-audit install` | Create the shell binary symlink and Claude Code `/claude-audit` command symlink. |
+| `claude-audit install` | Create the `~/.local/bin/claude-audit` binary symlink and `~/.claude/skills/claude-audit` skill symlink. |
 | `claude-audit uninstall` | Remove both symlinks cleanly. |
 
 ---
@@ -155,9 +155,13 @@ claude-audit sessions 15
 ### Directory Structure
 ```text
 ~/tools/projects/claude-audit/
+├── LICENSE
 ├── README.md
-├── bin/claude-audit.py       # Core CLI executable & JSONL parser
-└── skills/claude-audit/SKILL.md  # Slash-command definition for Claude Code
+├── bin/claude-audit.py           # Core CLI executable & JSONL parser
+├── docs/
+│   ├── PROJECT.md
+│   └── STATUS.md
+└── skills/claude-audit/SKILL.md  # Claude Code /claude-audit skill definition
 ```
 
 ---

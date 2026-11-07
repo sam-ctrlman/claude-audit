@@ -3,7 +3,7 @@
 <!-- created by /memlayout 2026-10-30 · board prefix TOOL-AUDIT · workspace tools -->
 
 ## Goal
-Lists every action Claude Code took (Bash, Edit, Write, …) from the session transcripts. Read-only.
+Read-only CLI & live tail -f monitor to audit every Bash command, file edit, and subagent action executed by Claude Code.
 
 ## Users
 A developer who runs Claude Code on their own machine and wants this step done the same way every time.
